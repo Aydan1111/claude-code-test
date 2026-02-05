@@ -296,13 +296,34 @@ class SmartRacingAI:
         df["ai_score"] -= np.where((star_power >= 26.0) & (structure <= 28.0), 4.0, 0.0)
 
         # -------------------------------------------------------
-        # Confidence (safe scaling)
+        # Confidence (safe scaling) - used for ranking
         # -------------------------------------------------------
         score_range = float(df["ai_score"].max() - df["ai_score"].min())
         if score_range == 0:
             df["confidence"] = 50.0
         else:
             df["confidence"] = 100.0 * (df["ai_score"] - df["ai_score"].min()) / score_range
+
+        # -------------------------------------------------------
+        # Model Confidence (70-90 scale)
+        # -------------------------------------------------------
+        # IMPORTANT: This is NOT a probability of winning.
+        # It represents how well the horse's profile aligns with
+        # the model's preferred signals (elite connections, ground
+        # fit, distance fit, no structural penalties).
+        # Higher = more factors align. Does NOT mean "more likely to win".
+        # -------------------------------------------------------
+        model_conf = np.full(len(df), 70.0)  # Base confidence = 70
+
+        # Increase for aligned signals (existing scores, no new logic)
+        model_conf += np.where(df["trainer"] == 10.0, 5.0, 0.0)       # Elite trainer
+        model_conf += np.where(df["jockey"] == 10.0, 5.0, 0.0)        # Elite jockey
+        model_conf += np.where(df["ground_score"] >= 8.0, 4.0, 0.0)   # Ground fit
+        model_conf += np.where(df["distance_score"] >= 8.0, 4.0, 0.0) # Distance fit
+        model_conf += np.where(df["profile_penalty"] == 0.0, 2.0, 0.0) # No penalties
+
+        # Clamp to 70-90 range (never 100%, never below 70%)
+        df["model_confidence"] = np.clip(model_conf, 70.0, 90.0)
 
         return df.sort_values("confidence", ascending=False).reset_index(drop=True)
 
@@ -322,7 +343,8 @@ class SmartRacingAI:
 
         for i, row in df.head(3).iterrows():
             print(f"\n⭐🐴 " + "=" * 60 + " 🏇⭐")
-            print(f"     {medals[i]} PICK: {str(row['name']).upper()} — {row['confidence']:.0f}% Confidence")
+            # Note: model_confidence = alignment with model signals, NOT win probability
+            print(f"     {medals[i]} PICK: {str(row['name']).upper()} — {row['model_confidence']:.0f}% Model Alignment")
             print(f"     🏇 Strengths:")
 
             factors = []
@@ -346,5 +368,8 @@ class SmartRacingAI:
         print("   • Class movement analysis")
         print("   • Trainer/jockey as key drivers + combo strength")
         print("   • Ensemble-weight ML logic")
+
+        # Clarify what model confidence means
+        print("\n⚠️  Model Alignment % = how well factors align, NOT chance to win.")
 
         print("=" * 70 + "\n")
